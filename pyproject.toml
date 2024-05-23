@@ -1,0 +1,30 @@
+[project]
+name = "zaber_bson"
+version = "0.1.0"
+description = "Lightweight BSON codec for Python"
+authors = [
+    {name = "Zaber Technologies", email = "software@zaber.com"},
+]
+dependencies = []
+requires-python = ">=3.8"
+readme = "README.md"
+license = {text = "BSD"}
+
+[project.urls]
+homepage = "https://github.com/zabertech/bson"
+
+[build-system]
+requires = ["pdm-backend"]
+build-backend = "pdm.backend"
+
+[tool.pdm]
+distribution = true
+
+[tool.pdm.scripts]
+test = { call = "test.__init__:main" }
+mypy = "mypy src"
+
+[tool.pdm.dev-dependencies]
+dev = [
+    "mypy>=1.10.0",
+]

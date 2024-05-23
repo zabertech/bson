@@ -3,7 +3,7 @@ from decimal import Decimal
 
 from unittest import TestCase
 
-from bson import dumps, loads
+from zaber_bson import dumps, loads
 
 
 class TestDecimal(TestCase):

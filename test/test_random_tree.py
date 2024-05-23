@@ -3,7 +3,7 @@ from binascii import hexlify
 from random import randint
 from unittest import TestCase
 
-from bson import dumps, loads
+from zaber_bson import dumps, loads
 
 
 def populate(parent, howmany, max_children):

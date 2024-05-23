@@ -1,6 +1,6 @@
 #!/usr/bin/env python
 
-from bson import dumps, loads
+from zaber_bson import dumps, loads
 from decimal import Decimal
 from unittest import TestCase
 
@@ -13,4 +13,3 @@ class TestUnknownHandler(TestCase):
         serialized = dumps(obj, on_unknown=float)
         unserialized = loads(serialized)
         self.assertEqual(float(d), unserialized["decimal"])
-
