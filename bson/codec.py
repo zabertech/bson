@@ -8,27 +8,17 @@ Base codec functions for bson.
 """
 import struct
 import warnings
-from datetime import datetime
+from datetime import datetime, timezone
 from abc import ABCMeta, abstractmethod
 from uuid import UUID
 from decimal import Decimal
 
 from bson.types import UInt64, Int64, Int32
 
-try:
-    from io import BytesIO as StringIO
-except ImportError:
-    from cStringIO import StringIO
+from io import BytesIO as StringIO
 
 import calendar
-from dateutil.tz import tzutc
 from binascii import b2a_hex
-
-from six import integer_types, iterkeys, text_type, PY3
-from six.moves import xrange
-
-
-utc = tzutc()
 
 class MissingClassDefinition(ValueError):
     def __init__(self, class_name):
@@ -132,7 +122,7 @@ def encode_string(value):
 
 def encode_cstring(value):
     if not isinstance(value, bytes):
-        value = text_type(value).encode("utf-8")
+        value = str(value).encode("utf-8")
     if b"\x00" in value:
         raise ValueError("Element names may not include NUL bytes.")
         # A NUL byte is used to delimit our string, accepting one would cause
@@ -173,28 +163,16 @@ def encode_string_element(name, value):
     return b"\x02" + encode_cstring(name) + encode_string(value)
 
 
-def _is_string(value):
-    if isinstance(value, text_type):
-        return True
-    elif isinstance(value, str) or isinstance(value, bytes):
-        try:
-            unicode(value, errors='strict')
-            return True
-        except:
-            pass
-    return False
-
-
 def encode_value(name, value, buf, traversal_stack,
                  generator_func, on_unknown=None):
     if isinstance(value, bool):
         buf.write(encode_boolean_element(name, value))
-    elif isinstance(value, integer_types):
+    elif isinstance(value, int):
         if value < -0x80000000 or 0x7FFFFFFFFFFFFFFF >= value > 0x7fffffff:
             buf.write(encode_int64_element(name, value))
         elif value > 0x7FFFFFFFFFFFFFFF:
             if value > 0xFFFFFFFFFFFFFFFF:
-                raise Exception("BSON format supports only int value < %s" % 0xFFFFFFFFFFFFFFFF) 
+                raise Exception("BSON format supports only int value < %s" % 0xFFFFFFFFFFFFFFFF)
             buf.write(encode_uint64_element(name, value))
         else:
             buf.write(encode_int32_element(name, value))
@@ -206,9 +184,9 @@ def encode_value(name, value, buf, traversal_stack,
         buf.write(encode_uint64_element(name, value.get_value()))
     elif isinstance(value, float):
         buf.write(encode_double_element(name, value))
-    elif _is_string(value):
+    elif isinstance(value, str):
         buf.write(encode_string_element(name, value))
-    elif isinstance(value, str) or isinstance(value, bytes):
+    elif isinstance(value, bytes):
         buf.write(encode_binary_element(name, value))
     elif isinstance(value, UUID):
         buf.write(encode_binary_element(name, value.bytes, binary_subtype=4))
@@ -238,7 +216,7 @@ def encode_value(name, value, buf, traversal_stack,
 def encode_document(obj, traversal_stack, traversal_parent=None,
                     generator_func=None, on_unknown=None):
     buf = StringIO()
-    key_iter = iterkeys(obj)
+    key_iter = iter(obj.keys())
     if generator_func is not None:
         key_iter = generator_func(obj, traversal_stack)
     for name in key_iter:
@@ -256,7 +234,7 @@ def encode_document(obj, traversal_stack, traversal_parent=None,
 def encode_array(array, traversal_stack, traversal_parent=None,
                  generator_func=None, on_unknown=None):
     buf = StringIO()
-    for i in xrange(0, len(array)):
+    for i in range(0, len(array)):
         value = array[i]
         traversal_stack.append(TraversalStep(traversal_parent or array, i))
         encode_value(str(i), value, buf, traversal_stack,
@@ -295,10 +273,7 @@ def decode_document(data, base, as_array=False):
 
         element_type = char_struct.unpack(data[base:base + 1])[0]
 
-        if PY3:
-            ll = data.index(0, base + 1) + 1
-        else:
-            ll = data.index("\x00", base + 1) + 1
+        ll = data.index(0, base + 1) + 1
         if decode_name:
             name = data[base + 1:ll - 1]
             try:
@@ -335,7 +310,7 @@ def decode_document(data, base, as_array=False):
             base += 1
         elif element_type == 0x09:  # UTCdatetime
             value = datetime.fromtimestamp(
-                long_struct.unpack(data[base:base + 8])[0] / 1000.0, utc)
+                long_struct.unpack(data[base:base + 8])[0] / 1000.0, tz=timezone.utc)
             base += 8
         elif element_type == 0x0A:  # none
             value = None

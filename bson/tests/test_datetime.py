@@ -1,14 +1,13 @@
 #!/usr/bin/env python
-from datetime import datetime
+from datetime import datetime, timezone
 from unittest import TestCase
 
-from dateutil.tz import tzutc
 from bson import dumps, loads
 
 
 class TestDateTime(TestCase):
     def test_datetime(self):
-        now = datetime.now(tzutc())
+        now = datetime.now(timezone.utc)
         obj = {"now": now}
         serialized = dumps(obj)
         obj2 = loads(serialized)
