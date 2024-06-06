@@ -2,14 +2,14 @@
 
 from unittest import TestCase
 
-import bson
+import zaber_bson
 
 
 class TestBoolean(TestCase):
     def test_false_value(self):
         data = {"key": False}
-        serialized = bson.dumps(data)
-        deserialized = bson.loads(serialized)
+        serialized = zaber_bson.dumps(data)
+        deserialized = zaber_bson.loads(serialized)
 
         self.assertIsInstance(deserialized["key"], bool)
         self.assertFalse(deserialized["key"])
@@ -17,8 +17,8 @@ class TestBoolean(TestCase):
 
     def test_true_value(self):
         data = {"key": True}
-        serialized = bson.dumps(data)
-        deserialized = bson.loads(serialized)
+        serialized = zaber_bson.dumps(data)
+        deserialized = zaber_bson.loads(serialized)
 
         self.assertIsInstance(deserialized["key"], bool)
         self.assertTrue(deserialized["key"])

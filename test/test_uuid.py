@@ -3,7 +3,7 @@ from uuid import UUID
 
 from unittest import TestCase
 
-from bson import dumps, loads
+from zaber_bson import dumps, loads
 
 
 class TestUUID(TestCase):

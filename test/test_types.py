@@ -1,8 +1,8 @@
 #!/usr/bin/env python
 from unittest import TestCase
 
-from bson import dumps, loads
-from bson.types import UInt64, Int64, Int32
+from zaber_bson import dumps, loads
+from zaber_bson.types import UInt64, Int64, Int32
 
 
 class TestTypes(TestCase):
@@ -29,4 +29,3 @@ class TestTypes(TestCase):
         dump = dumps(self.good_request_dict)
         decoded = loads(dump)
         self.assertEqual(decoded, {k: v.get_value() for k, v in self.good_request_dict.items()})
-
