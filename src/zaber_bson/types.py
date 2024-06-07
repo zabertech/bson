@@ -5,7 +5,7 @@ class Int32:
 
     def __init__(self, value):
         if value < -2 ** 31 or value > 2 ** 31 - 1:
-            raise ValueError('value {} cannot be represented in int32'.format(value))
+            raise ValueError(f'value {value} cannot be represented in int32')
         self._value = value
 
     def get_value(self):
@@ -22,7 +22,7 @@ class Int64:
 
     def __init__(self, value):
         if value < -2 ** 63 or value > 2 ** 63 - 1:
-            raise ValueError('value {} cannot be represented in int32'.format(value))
+            raise ValueError(f'value {value} cannot be represented in int32')
         self._value = value
 
     def get_value(self):
@@ -39,7 +39,7 @@ class UInt64:
 
     def __init__(self, value):
         if value < 0 or value > 2 ** 64 - 1:
-            raise ValueError('value {} cannot be represented in uint32'.format(value))
+            raise ValueError(f'value {value} cannot be represented in uint64')
         self._value = value
 
     def get_value(self):
