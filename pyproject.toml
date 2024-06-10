@@ -22,9 +22,27 @@ distribution = true
 
 [tool.pdm.scripts]
 test = { call = "test.__init__:main" }
-mypy = "mypy src"
+check = { composite = ["mypy", "test", "pylint"] }
+mypy = "mypy --strict src"
+pylint = "pylint src"
 
 [tool.pdm.dev-dependencies]
 dev = [
     "mypy>=1.10.0",
+    "pylint>=3.2.3",
 ]
+
+[tool.pylint]
+disable = [
+    "missing-module-docstring",
+    "missing-function-docstring",
+    "missing-class-docstring",
+    "too-few-public-methods",
+    "too-many-branches",
+    "too-many-statements",
+    "too-many-locals",
+    "too-many-arguments",
+    "global-variable-not-assigned",
+    "no-else-return",
+]
+max-line-length = 120

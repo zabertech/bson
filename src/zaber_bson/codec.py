@@ -12,56 +12,64 @@ from datetime import datetime, timezone
 from abc import ABCMeta, abstractmethod
 from uuid import UUID
 from decimal import Decimal
+from io import BytesIO as StringIO
+import calendar
+from binascii import b2a_hex
+from typing import Optional, Union, Callable, List, Iterator, Any, Tuple, Dict
 
 from zaber_bson.types import UInt64, Int64, Int32
 
-from io import BytesIO as StringIO
+Key = Union[str, bytes]
+AnyDict = Dict[Key, Any]
+AnyList = List[Any]
+AnyTuple = Tuple[Any, ...]
 
-import calendar
-from binascii import b2a_hex
 
 class MissingClassDefinition(ValueError):
-    def __init__(self, class_name):
-        super(MissingClassDefinition,
-              self).__init__("No class definition for class %s" % (class_name,))
+    def __init__(self, class_name: str):
+        super().__init__(f"No class definition for class {class_name}")
 
 
 class UnknownSerializerError(ValueError):
-    def __init__(self, key, value):
-        super(UnknownSerializerError,
-              self).__init__("Unable to serialize: key '%s' value: %s type: %s" % (key,value, type(value)))
+    def __init__(self, key: Key, value: Any):
+        super().__init__(f"Unable to serialize: key '{key!r}' value: {value} type: {type(value)}")
 
 
 class MissingTimezoneWarning(RuntimeWarning):
-    def __init__(self, *args):
-        args = list(args)
+    def __init__(self, *args: object):
         if len(args) < 1:
-            args.append("Input datetime object has no tzinfo, assuming UTC.")
-        super(MissingTimezoneWarning, self).__init__(*args)
+            args = ("Input datetime object has no tzinfo, assuming UTC.",)
+        super().__init__(*args)
 
 
-class TraversalStep(object):
-    def __init__(self, parent, key):
+class TraversalStep:
+    def __init__(self, parent: object, key: Union[str, bytes, int]):
         self.parent = parent
         self.key = key
 
 
-class BSONCoding(object):
+TraversalStack = List[TraversalStep]
+GeneratorFunc = Optional[Callable[[Any, TraversalStack], Iterator[str]]]
+OnUnknown = Optional[Callable[[Any], Any]]
+
+
+class BSONCoding:
     __metaclass__ = ABCMeta
 
     @abstractmethod
-    def bson_encode(self):
+    def bson_encode(self) -> AnyDict:
         pass
 
     @abstractmethod
-    def bson_init(self, raw_values):
+    def bson_init(self, raw_values: AnyDict) -> Any:
         pass
 
 
+CLASSNAME_KEY = "$$__CLASS_NAME__$$"
 classes = {}
 
 
-def import_class(cls):
+def import_class(cls: Any) -> None:
     if not issubclass(cls, BSONCoding):
         return
 
@@ -69,58 +77,60 @@ def import_class(cls):
     classes[cls.__name__] = cls
 
 
-def import_classes(*args):
+def import_classes(*args: Any) -> None:
     for cls in args:
         import_class(cls)
 
 
-def import_classes_from_modules(*args):
+def import_classes_from_modules(*args: Any) -> None:
     for module in args:
         for item in module.__dict__:
             if hasattr(item, "__new__") and hasattr(item, "__name__"):
                 import_class(item)
 
 
-def encode_object(obj, traversal_stack, generator_func, on_unknown=None):
+def encode_object(obj: BSONCoding, traversal_stack: TraversalStack,
+                  generator_func: GeneratorFunc, on_unknown: OnUnknown=None) -> bytes:
     values = obj.bson_encode()
     class_name = obj.__class__.__name__
-    values["$$__CLASS_NAME__$$"] = class_name
+    values[CLASSNAME_KEY] = class_name
     return encode_document(values, traversal_stack, obj,
                            generator_func, on_unknown)
 
 
-def encode_object_element(name, value, traversal_stack,
-                          generator_func, on_unknown):
+def encode_object_element(name: Key, value: BSONCoding, traversal_stack: TraversalStack,
+                          generator_func: GeneratorFunc, on_unknown: OnUnknown) -> bytes:
     return b"\x03" + encode_cstring(name) + \
            encode_object(value, traversal_stack,
                          generator_func=generator_func, on_unknown=on_unknown)
 
 
-class _EmptyClass(object):
+class _EmptyClass:
     pass
 
 
-def decode_object(raw_values):
+def decode_object(raw_values: AnyDict) -> Any:
     global classes
-    class_name = raw_values["$$__CLASS_NAME__$$"]
+    class_name = raw_values[CLASSNAME_KEY]
     try:
         cls = classes[class_name]
-    except KeyError:
-        raise MissingClassDefinition(class_name)
+    except KeyError as e:
+        raise MissingClassDefinition(class_name) from e
 
     retval = _EmptyClass()
     retval.__class__ = cls
-    alt_retval = retval.bson_init(raw_values)
+    assert isinstance(retval, BSONCoding)
+    alt_retval = retval.bson_init(raw_values)  # pylint: disable=no-member
     return alt_retval or retval
 
 
-def encode_string(value):
-    value = value.encode("utf-8")
-    length = len(value)
-    return struct.pack("<i%dsb" % (length,), length + 1, value, 0)
+def encode_string(value: str) -> bytes:
+    bvalue = value.encode("utf-8")
+    length = len(bvalue)
+    return struct.pack(f"<i{length}sb", length + 1, bvalue, 0)
 
 
-def encode_cstring(value):
+def encode_cstring(value: Key) -> bytes:
     if not isinstance(value, bytes):
         value = str(value).encode("utf-8")
     if b"\x00" in value:
@@ -130,12 +140,12 @@ def encode_cstring(value):
     return value + b"\x00"
 
 
-def encode_binary(value, binary_subtype=0):
+def encode_binary(value: bytes, binary_subtype: int=0) -> bytes:
     length = len(value)
     return struct.pack("<ib", length, binary_subtype) + value
 
 
-def encode_double(value):
+def encode_double(value: float) -> bytes:
     return struct.pack("<d", value)
 
 
@@ -155,16 +165,16 @@ ELEMENT_TYPES = {
 }
 
 
-def encode_double_element(name, value):
+def encode_double_element(name: Key, value: float) -> bytes:
     return b"\x01" + encode_cstring(name) + encode_double(value)
 
 
-def encode_string_element(name, value):
+def encode_string_element(name: Key, value: str) -> bytes:
     return b"\x02" + encode_cstring(name) + encode_string(value)
 
 
-def encode_value(name, value, buf, traversal_stack,
-                 generator_func, on_unknown=None):
+def encode_value(name: Key, value: Any, buf: StringIO, traversal_stack: TraversalStack,
+                 generator_func: GeneratorFunc, on_unknown: OnUnknown=None) -> None:
     if isinstance(value, bool):
         buf.write(encode_boolean_element(name, value))
     elif isinstance(value, int):
@@ -172,7 +182,7 @@ def encode_value(name, value, buf, traversal_stack,
             buf.write(encode_int64_element(name, value))
         elif value > 0x7FFFFFFFFFFFFFFF:
             if value > 0xFFFFFFFFFFFFFFFF:
-                raise Exception("BSON format supports only int value < %s" % 0xFFFFFFFFFFFFFFFF)
+                raise ValueError(f"BSON format supports only int value < {0xFFFFFFFFFFFFFFFF}")
             buf.write(encode_uint64_element(name, value))
         else:
             buf.write(encode_int32_element(name, value))
@@ -193,11 +203,11 @@ def encode_value(name, value, buf, traversal_stack,
     elif isinstance(value, datetime):
         buf.write(encode_utc_datetime_element(name, value))
     elif value is None:
-        buf.write(encode_none_element(name, value))
+        buf.write(encode_none_element(name))
     elif isinstance(value, dict):
         buf.write(encode_document_element(name, value, traversal_stack,
                                           generator_func, on_unknown))
-    elif isinstance(value, list) or isinstance(value, tuple):
+    elif isinstance(value, (list, tuple)):
         buf.write(encode_array_element(name, value, traversal_stack,
                                        generator_func, on_unknown))
     elif isinstance(value, BSONCoding):
@@ -213,8 +223,8 @@ def encode_value(name, value, buf, traversal_stack,
             raise UnknownSerializerError(name, value)
 
 
-def encode_document(obj, traversal_stack, traversal_parent=None,
-                    generator_func=None, on_unknown=None):
+def encode_document(obj: AnyDict, traversal_stack: TraversalStack, traversal_parent: object=None,
+                    generator_func: GeneratorFunc=None, on_unknown: OnUnknown=None) -> bytes:
     buf = StringIO()
     key_iter = iter(obj.keys())
     if generator_func is not None:
@@ -227,32 +237,31 @@ def encode_document(obj, traversal_stack, traversal_parent=None,
         traversal_stack.pop()
     e_list = buf.getvalue()
     e_list_length = len(e_list)
-    return struct.pack("<i%dsb" % (e_list_length,),
+    return struct.pack(f"<i{e_list_length}sb",
                        e_list_length + 4 + 1, e_list, 0)
 
 
-def encode_array(array, traversal_stack, traversal_parent=None,
-                 generator_func=None, on_unknown=None):
+def encode_array(array: Union[AnyList, AnyTuple], traversal_stack: TraversalStack, traversal_parent: object=None,
+                 generator_func: GeneratorFunc=None, on_unknown: OnUnknown=None) -> bytes:
     buf = StringIO()
-    for i in range(0, len(array)):
-        value = array[i]
+    for i, value in enumerate(array):
         traversal_stack.append(TraversalStep(traversal_parent or array, i))
         encode_value(str(i), value, buf, traversal_stack,
                      generator_func, on_unknown)
         traversal_stack.pop()
     e_list = buf.getvalue()
     e_list_length = len(e_list)
-    return struct.pack("<i%dsb" % (e_list_length,),
+    return struct.pack(f"<i{e_list_length}sb",
                        e_list_length + 4 + 1, e_list, 0)
 
 
-def decode_binary_subtype(value, binary_subtype):
+def decode_binary_subtype(value: bytes, binary_subtype: int)-> Union[UUID, bytes]:
     if binary_subtype in [0x03, 0x04]:  # legacy UUID, UUID
         return UUID(bytes=value)
     return value
 
 
-def decode_document(data, base, as_array=False):
+def decode_document(data: bytes, base: int, as_array: bool=False) -> Tuple[int, Any]:
     # Create all the struct formats we might use.
     double_struct = struct.Struct("<d")
     int_struct = struct.Struct("<i")
@@ -266,8 +275,10 @@ def decode_document(data, base, as_array=False):
     if data[end_point - 1] not in ('\0', 0):
         raise ValueError('missing null-terminator in document')
     base += 4
-    retval = [] if as_array else {}
+
+    retval: Union[AnyDict, AnyList] = [] if as_array else {}
     decode_name = not as_array
+    name: Optional[Key] = None
 
     while base < end_point - 1:
 
@@ -323,62 +334,67 @@ def decode_document(data, base, as_array=False):
         elif element_type == 0x12:  # int64
             value = long_struct.unpack(data[base:base + 8])[0]
             base += 8
+        else:
+            raise ValueError(f"Unknown element type: {element_type}")
 
-        if as_array:
+        if isinstance(retval, list):
             retval.append(value)
         else:
+            assert name is not None
             retval[name] = value
-    if "$$__CLASS_NAME__$$" in retval:
-        retval = decode_object(retval)
-    return end_point, retval
+
+    if isinstance(retval, dict) and CLASSNAME_KEY in retval:
+        return end_point, decode_object(retval)
+    else:
+        return end_point, retval
 
 
-def encode_document_element(name, value, traversal_stack,
-                            generator_func, on_unknown):
+def encode_document_element(name: Key, value: AnyDict, traversal_stack: TraversalStack,
+                            generator_func: GeneratorFunc, on_unknown: OnUnknown) -> bytes:
     return b"\x03" + encode_cstring(name) + \
            encode_document(value, traversal_stack,
                            generator_func=generator_func, on_unknown=on_unknown)
 
 
-def encode_array_element(name, value, traversal_stack,
-                         generator_func, on_unknown):
+def encode_array_element(name: Key, value: Union[AnyList, AnyTuple], traversal_stack: TraversalStack,
+                         generator_func: GeneratorFunc, on_unknown: OnUnknown) -> bytes:
     return b"\x04" + encode_cstring(name) + \
            encode_array(value, traversal_stack,
                         generator_func=generator_func, on_unknown=on_unknown)
 
 
-def encode_binary_element(name, value, binary_subtype=0):
+def encode_binary_element(name: Key, value: bytes, binary_subtype: int=0) -> bytes:
     return b"\x05" + encode_cstring(name) + encode_binary(value, binary_subtype=binary_subtype)
 
 
-def encode_boolean_element(name, value):
+def encode_boolean_element(name: Key, value: bool) -> bytes:
     return b"\x08" + encode_cstring(name) + struct.pack("<b", value)
 
 
-def encode_utc_datetime_element(name, value):
+def encode_utc_datetime_element(name: Key, value: datetime) -> bytes:
     if value.tzinfo is None:
         warnings.warn(MissingTimezoneWarning(), None, 4)
-    value = int(round(calendar.timegm(value.utctimetuple()) * 1000 +
+    bvalue = int(round(calendar.timegm(value.utctimetuple()) * 1000 +
                       (value.microsecond / 1000.0)))
-    return b"\x09" + encode_cstring(name) + struct.pack("<q", value)
+    return b"\x09" + encode_cstring(name) + struct.pack("<q", bvalue)
 
 
-def encode_none_element(name, value):
+def encode_none_element(name: Key) -> bytes:
     return b"\x0a" + encode_cstring(name)
 
 
-def encode_int32_element(name, value):
-    value = struct.pack("<i", value)
-    return b"\x10" + encode_cstring(name) + value
+def encode_int32_element(name: Key, value: int) -> bytes:
+    bvalue = struct.pack("<i", value)
+    return b"\x10" + encode_cstring(name) + bvalue
 
 
-def encode_uint64_element(name, value):
+def encode_uint64_element(name: Key, value: int) -> bytes:
     return b"\x11" + encode_cstring(name) + struct.pack("<Q", value)
 
 
-def encode_int64_element(name, value):
+def encode_int64_element(name: Key, value: int) -> bytes:
     return b"\x12" + encode_cstring(name) + struct.pack("<q", value)
 
 
-def encode_object_id_element(name, value):
+def encode_object_id_element(name: Key, value: bytes) -> bytes:
     return b"\x07" + encode_cstring(name) + value

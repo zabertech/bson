@@ -19,12 +19,14 @@ over-engineered:
 For binaries, only the default 0x0 type is supported.
 """
 
+from typing import Any
+
 from .codec import *
 
 __all__ = ["loads", "dumps"]
 
 
-def dumps(obj, generator=None, on_unknown=None):
+def dumps(obj: Any, generator: GeneratorFunc=None, on_unknown: OnUnknown=None) -> bytes:
     """
     Given a dict, outputs a BSON string.
 
@@ -39,7 +41,7 @@ def dumps(obj, generator=None, on_unknown=None):
                            generator_func=generator, on_unknown=on_unknown)
 
 
-def loads(data):
+def loads(data: bytes) -> Any:
     """
         Given a BSON string, outputs a dict.
     """
